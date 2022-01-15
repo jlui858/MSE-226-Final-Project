@@ -1,0 +1,172 @@
+```{r}
+# PART 1
+library(GGally)
+library(dplyr)
+library(cvTools)
+library(BBmisc)
+library(class)
+library(gmodels)
+
+df <- read.csv("fetal_health.csv")
+
+set.seed(123)
+train.ind = sample(1:nrow(df), 0.8*nrow(df))
+df.train = df[train.ind,]
+df.test = df[-train.ind,]
+```
+
+
+```{r}
+#CLASSIFICATION
+df.train.knn <- df.train.reg
+
+df.train.knn <- select(df.train.knn, -c("fetal_health"))
+df.train.knn <- normalize(df.train.knn)
+df.train.knn$fetal_health <- df.train.reg$fetal_health
+
+df.train.knn$fetal_health <- as.integer(df.train.knn$fetal_health == 1)
+
+mean(df.train.knn$fetal_health)
+
+train.ind.knn = sample(1:nrow(df.train.knn), 0.9*nrow(df.train.knn))
+df.training.knn = df.train.knn[train.ind.knn,]
+df.test.knn = df.train.knn[-train.ind.knn,]
+
+knn.train.pred <- knn(train = df.training.knn, test=df.test.knn, cl=df.training.knn$fetal_health, 5)
+
+CrossTable(x = df.test.knn$fetal_health, y = knn.train.pred)
+```
+
+
+```{r}
+# PART 1: LINEAR
+set.seed(123)
+lmMod <- lm(sqrt_mean_value_of_short_term_variability ~ ., data = df.train.reg)
+pred.lm.train <- predict(lmMod, df.train.reg)
+rmse.pred.lm.train <- sqrt(mean((df.train.reg$sqrt_mean_value_of_short_term_variability - pred.lm.train)^2))
+rmse.pred.lm.train
+
+# PART 2
+# Linear Model
+
+df.test.new <- select(df.test, -c("percentage_of_time_with_abnormal_long_term_variability"))
+df.test.new$sqrt_mean_value_of_short_term_variability <- sqrt(df.test$mean_value_of_short_term_variability)
+df.test.new <- select(df.test, -c("mean_value_of_short_term_variability"))
+# doing this, now you can't run predict because linear model is based on different covariates
+
+pred.lm.test <- predict(lmMod, df.test.new)
+rmse.pred.lm.test <- sqrt(mean((df.test.new$sqrt_mean_value_of_short_term_variability - pred.lm.test)^2))
+rmse.pred.lm.test
+
+# 2: Inference
+summary(lmMod)
+lmMod.test <- lm(sqrt_mean_value_of_short_term_variability ~ ., data = df.test.reg)
+summary(lmMod.test)
+```
+
+
+```{r}
+# PART 1 - Ridge Model
+
+df.train.reg <- df.train
+df.train.reg$sqrt_accelerations <- sqrt(df.train$accelerations)
+df.train.reg$sqrt_uterine_contractions <- sqrt(df.train$uterine_contractions)
+df.train.reg$sqrt_light_decelerations <- sqrt(df.train$light_decelerations)
+df.train.reg$sqrt_mean_value_of_short_term_variability <- sqrt(df.train$mean_value_of_short_term_variability)
+df.train.reg$sqrt_percentage_of_time_with_abnormal_long_term_variability <- sqrt(df.train$percentage_of_time_with_abnormal_long_term_variability)
+df.train.reg$sqrt_mean_value_of_long_term_variability <- sqrt(df.train$mean_value_of_long_term_variability)
+df.train.reg$sqrt_histogram_number_of_peaks <- sqrt(df.train$histogram_number_of_peaks)
+df.train.reg$sqrt_histogram_variance <- sqrt(df.train$histogram_variance)
+
+df.train.reg <- select(df.train.reg, -c("accelerations", "uterine_contractions", "light_decelerations", 
+                                "mean_value_of_short_term_variability", 
+                                "percentage_of_time_with_abnormal_long_term_variability", 
+                                "mean_value_of_long_term_variability", "histogram_number_of_peaks", 
+                                "histogram_variance", "histogram_max"))
+
+df.test.reg <- df.test
+df.test.reg$sqrt_accelerations <- sqrt(df.test$accelerations)
+df.test.reg$sqrt_uterine_contractions <- sqrt(df.test$uterine_contractions)
+df.test.reg$sqrt_light_decelerations <- sqrt(df.test$light_decelerations)
+df.test.reg$sqrt_mean_value_of_short_term_variability <- sqrt(df.test$mean_value_of_short_term_variability)
+df.test.reg$sqrt_percentage_of_time_with_abnormal_long_term_variability <- sqrt(df.test$percentage_of_time_with_abnormal_long_term_variability)
+df.test.reg$sqrt_mean_value_of_long_term_variability <- sqrt(df.test$mean_value_of_long_term_variability)
+df.test.reg$sqrt_histogram_number_of_peaks <- sqrt(df.test$histogram_number_of_peaks)
+df.test.reg$sqrt_histogram_variance <- sqrt(df.test$histogram_variance)
+
+df.test.reg <- select(df.test.reg, -c("accelerations", "uterine_contractions", "light_decelerations", 
+                                "mean_value_of_short_term_variability", 
+                                "percentage_of_time_with_abnormal_long_term_variability", 
+                                "mean_value_of_long_term_variability", "histogram_number_of_peaks", 
+                                "histogram_variance", "histogram_max"))
+
+library(glmnet)
+
+set.seed(123)
+
+y.train = df.train.reg$sqrt_mean_value_of_short_term_variability
+df.train.ridge <- df.train.reg[, -c(17)]
+x.train = as.matrix(df.train.ridge)
+
+y.test = df.test.reg$sqrt_mean_value_of_short_term_variability
+df.test.ridge <- df.test.reg[ , -c(17)]
+x.test = as.matrix(df.test.ridge)
+
+ridge.mod <- glmnet(x.train, y.train, alpha = 0)
+summary(ridge.mod)
+
+# find lambda that produces lowest MSE through cross validation
+
+cv.model <- cv.glmnet(x.train, y.train, alpha = 0)
+
+# optimal lambda
+opt.lambda <- cv.model$lambda.min
+opt.lambda
+
+plot(cv.model)
+
+# Now, find coefficients using best lambda
+ridge.mod.best <- glmnet(x.train, y.train, alpha = 0, lambda = opt.lambda)
+coef(ridge.mod.best)
+
+# Prediction and evaluation on training data
+train.pred <- predict(ridge.mod.best, s = opt.lambda, newx = x.train)
+SSE.train <- sum((train.pred - y.train)^2)
+RMSE.train = sqrt(SSE.train/nrow(df.train.reg))
+# RMSE.train = 0.1824652
+
+# PART 2
+
+# Prediction and evaluation on test data
+test.pred <- predict(ridge.mod.best, s = opt.lambda, newx = x.test)
+SSE.test <- sum((test.pred - y.test)^2)
+RMSE.test = sqrt(SSE.test/nrow(df.test.reg))
+# RMSE.test = 0.1767414
+```
+
+
+```{r}
+# BOOTSTRAP
+library(boot)
+summary(lmMod)
+
+df.boot <- rbind(df.train.reg, df.test.reg)
+
+n_reps = 10000
+n = 1000
+boot.out = sapply(1:n_reps)
+
+
+coef.boot = function(data, indices) {
+  mod.fit = lm(sqrt_mean_value_of_short_term_variability ~ ., data = data[indices, ])
+  return(coef(mod.fit))
+}
+boot.out = boot(df.train.reg, coef.boot, 10000)
+
+for (i in 1:ncol(boot.out$t)) {
+  print(boot.ci(boot.out, type = c("norm"), index = i))
+}
+
+```
+
+
